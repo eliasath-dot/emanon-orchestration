@@ -5,7 +5,8 @@ the test that proves it holds. A change that breaks an invariant is rejected
 regardless of what else it improves.
 
 Status: `[x]` enforced by a passing test (named) · `[ ]` stated, not yet enforced.
-An invariant moves to `[x]` only when its test exists and passes in CI.
+An invariant moves to `[x]` only when its test exists and passes.
+`test_invariants.py` checks that every test cited here exists.
 
 ---
 
@@ -75,11 +76,15 @@ compared with `hmac.compare_digest`.
 - [x] `test_emanon_core.py::test_audit_logger_prev_signature_tamper_fails_verification`
 - [x] `test_action_gate.py::test_tampered_decision_log_fails_verification`
 
-**Known gap, stated in the README.** Truncating the tail of the chain is not
-detected because the expected length is not recorded. Closing this is roadmap
-item 2.
+**Truncation.** `verify_chain()` alone cannot see a cut tail; with a sealed
+`head()` stored separately it can. `load_jsonl` refuses a file that fails
+either check.
 
-- [ ] truncation of the chain fails verification
+- [x] `test_emanon_core.py::test_audit_logger_truncation_detected_with_head`
+- [x] `test_emanon_core.py::test_audit_logger_extension_after_seal_detected`
+- [x] `test_emanon_core.py::test_audit_logger_tampered_head_rejected`
+- [x] `test_emanon_core.py::test_audit_logger_jsonl_truncated_file_rejected`
+- [x] `test_emanon_core.py::test_audit_logger_jsonl_edited_file_rejected`
 
 ---
 
@@ -110,7 +115,8 @@ calibrated.
 - [x] validated: `test_action_gate.py::test_bad_configuration_rejected`,
   `test_emanon_core.py::test_threshold_optimizer_invalid_init_values`,
   `test_emanon_core.py::test_meta_controller_invalid_drift_threshold_raises`
-- [ ] every default has a one-line stated rationale next to its definition
+- [x] stated in a comment beside each default in `action_gate.py` and
+  `emanon_orchestration_core.py`
 
 ---
 
@@ -137,7 +143,11 @@ labelled *illustrative*.
 
 **Prevents.** A reviewer asking "did this actually happen?" and the answer being no.
 
-- [ ] README examples executed as doctests in CI
+- [x] `test_readme_examples.py::test_readme_block_runs` (every ```python block)
+- [x] `test_readme_examples.py::test_readme_meta_controller_claims` (and the
+  other `*_claims` tests check the values the README shows)
+- [x] `test_readme_examples.py::test_worked_example_runs`
+  (`example_agent_loop.py` is labelled illustrative in its own docstring)
 
 ---
 
@@ -150,8 +160,9 @@ rotation, truncation detection and packaging are planned.
 **Prevents.** Documentation theatre: a polished spec for code that does not exist.
 
 - [x] README "Status and roadmap" keeps the two lists apart
-- [ ] a check that every component named as implemented maps to at least one
-  named test
+- [x] `test_invariants.py::test_every_documented_component_has_a_test`
+- [x] `test_invariants.py::test_every_cited_test_exists` (this file may not
+  cite a test that does not exist)
 
 ---
 

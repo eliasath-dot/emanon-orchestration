@@ -6,7 +6,8 @@ import json
 import math
 import time
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -75,7 +76,15 @@ class AuditLogger:
         self.last_signature = signature
         return signature
 
-    def verify_chain(self) -> bool:
+    def verify_chain(self, head: Optional[Mapping[str, Any]] = None) -> bool:
+        """Verify every link in the chain.
+
+        Without `head`, this detects modification, reordering and forgery of
+        entries, but NOT truncation of the tail: a chain cut short is still
+        internally consistent. Pass a `head` previously obtained from `head()`
+        and stored separately (another file, another host) to also check that
+        the chain still has the sealed length and ends at the sealed signature.
+        """
         prev = self.GENESIS_SIGNATURE
         try:
             for entry in self.chain:
@@ -89,13 +98,91 @@ class AuditLogger:
                 prev = entry.signature
         except (AttributeError, KeyError, TypeError, ValueError):
             return False
+        if head is not None:
+            return self._verify_head(head, length=len(self.chain), last_signature=prev)
         return True
+
+    # --- Sealed head: makes truncation detectable --------------------------
+
+    def head(self) -> Dict[str, Any]:
+        """Return a signed commitment to the chain's current length and tail.
+
+        Store it somewhere the chain itself cannot be edited from. Verifying
+        with it later proves the chain has not been cut short or extended.
+        """
+        length = len(self.chain)
+        return {
+            "length": length,
+            "last_signature": self.last_signature,
+            "seal": self._compute_hmac(self._head_payload(length, self.last_signature)),
+        }
+
+    @staticmethod
+    def _head_payload(length: int, last_signature: str) -> str:
+        return json.dumps({"length": length, "last_signature": last_signature},
+                          sort_keys=True, separators=(",", ":"))
+
+    def _verify_head(self, head: Mapping[str, Any], length: int, last_signature: str) -> bool:
+        try:
+            if not isinstance(head["length"], int) or isinstance(head["length"], bool):
+                return False
+            expected_seal = self._compute_hmac(self._head_payload(head["length"], head["last_signature"]))
+            if not hmac.compare_digest(expected_seal, str(head["seal"])):
+                return False  # the head itself was tampered with
+            return head["length"] == length and hmac.compare_digest(head["last_signature"], last_signature)
+        except (KeyError, TypeError):
+            return False
+
+    # --- Persistence: append-only JSONL -----------------------------------
 
     def export_chain(self):
         return [asdict(e) for e in self.chain]
 
+    def save_jsonl(self, path) -> None:
+        """Write the chain as one JSON object per line (overwrites the file)."""
+        with Path(path).open("w", encoding="utf-8") as fh:
+            for entry in self.chain:
+                fh.write(json.dumps(asdict(entry), sort_keys=True, separators=(",", ":"),
+                                    allow_nan=False) + "\n")
+
+    def append_jsonl(self, path, entry: AuditLogEntry) -> None:
+        """Append one entry to a JSONL file. Pair with record_handshake's return."""
+        with Path(path).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(asdict(entry), sort_keys=True, separators=(",", ":"),
+                                allow_nan=False) + "\n")
+
+    @classmethod
+    def load_jsonl(cls, secret_key: str, path, head: Optional[Mapping[str, Any]] = None) -> "AuditLogger":
+        """Rebuild a logger from a JSONL file and verify it.
+
+        Raises ValueError if the file fails verification, so a corrupted or
+        truncated log is never silently resumed. Pass `head` to also detect
+        truncation (see verify_chain).
+        """
+        logger = cls(secret_key)
+        with Path(path).open("r", encoding="utf-8") as fh:
+            for line_no, line in enumerate(fh, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                    entry = AuditLogEntry(**raw)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"{path}: malformed entry on line {line_no}: {exc}") from exc
+                logger.chain.append(entry)
+        if logger.chain:
+            logger.last_signature = logger.chain[-1].signature
+        if not logger.verify_chain(head=head):
+            raise ValueError(f"{path}: audit chain failed verification"
+                             + (" against the supplied head" if head is not None else ""))
+        return logger
+
 
 class ThresholdOptimizer:
+    # Defaults are operator choices, not measured constants.
+    #   waste_weight=1.2   : one unit of compute must buy more than 1.2 units of value to break even.
+    #   waste_exponent=1.05: slightly superlinear, so doubling spend must more than double value.
     def __init__(self, waste_weight=1.2, waste_exponent=1.05):
         if not math.isfinite(waste_weight) or waste_weight < 0:
             raise ValueError("waste_weight must be finite and non-negative.")
@@ -125,6 +212,8 @@ class ThresholdOptimizer:
 
 
 class EmanonMetaController:
+    # drift_threshold=0.75 (cosine): roughly a 41 degree cone around the root objective;
+    # a starting point to tune per embedding model, not a calibrated value.
     def __init__(self, root_vector, drift_threshold=0.75):
         if not -1.0 <= drift_threshold <= 1.0:
             raise ValueError("drift_threshold must be between -1.0 and 1.0")
