@@ -89,6 +89,9 @@ class ActionGate:
     because two matching samples out of two says very little.
     """
 
+    # Defaults are operator choices, not measured constants.
+    #   threshold=0.8  : 4 of 5 samples must agree; chosen so one dissenting sample in five still commits.
+    #   min_samples=3  : the smallest count where a majority is more than one sample.
     def __init__(
         self,
         threshold: float = 0.8,

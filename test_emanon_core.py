@@ -202,3 +202,105 @@ def test_meta_controller_zero_agent_vector_returns_zero_similarity():
 def test_meta_controller_invalid_drift_threshold_raises():
     with pytest.raises(ValueError, match="drift_threshold must be between -1.0 and 1.0"):
         EmanonMetaController(root_vector=[1.0, 0.0], drift_threshold=1.5)
+
+
+# --- Sealed head: truncation is detectable ---------------------------------
+
+def _chain_of(n, key="truncation-test-key"):
+    logger = AuditLogger(key)
+    for i in range(n):
+        logger.record_handshake("planner", "executor", {"step": i})
+    return logger
+
+
+def test_audit_logger_truncation_undetected_without_head():
+    # Documented limit: a chain cut short is still internally consistent.
+    logger = _chain_of(5)
+    logger.chain.pop()
+    assert logger.verify_chain()
+
+
+def test_audit_logger_truncation_detected_with_head():
+    logger = _chain_of(5)
+    head = logger.head()
+    assert logger.verify_chain(head=head)
+    logger.chain.pop()
+    logger.last_signature = logger.chain[-1].signature
+    assert not logger.verify_chain(head=head)
+
+
+def test_audit_logger_extension_after_seal_detected():
+    logger = _chain_of(3)
+    head = logger.head()
+    logger.record_handshake("planner", "executor", {"step": "late"})
+    assert logger.verify_chain()                 # links are fine
+    assert not logger.verify_chain(head=head)    # but the seal says 3, not 4
+
+
+def test_audit_logger_tampered_head_rejected():
+    logger = _chain_of(4)
+    head = logger.head()
+    head["length"] = 3                           # attacker edits the head to match a cut chain
+    logger.chain.pop()
+    logger.last_signature = logger.chain[-1].signature
+    assert not logger.verify_chain(head=head)    # seal no longer matches
+    assert not logger.verify_chain(head={"length": 3})  # malformed head
+
+
+def test_audit_logger_empty_chain_head():
+    logger = AuditLogger("truncation-test-key")
+    assert logger.verify_chain(head=logger.head())
+
+
+# --- Persistence: JSONL round-trip --------------------------------------------
+
+def test_audit_logger_jsonl_round_trip(tmp_path):
+    logger = _chain_of(4)
+    path = tmp_path / "audit.jsonl"
+    logger.save_jsonl(path)
+    head = logger.head()
+    loaded = AuditLogger.load_jsonl("truncation-test-key", path, head=head)
+    assert loaded.export_chain() == logger.export_chain()
+    assert loaded.last_signature == logger.last_signature
+    # The restored logger can keep recording and the chain stays valid.
+    loaded.record_handshake("executor", "reviewer", {"step": "resume"})
+    assert loaded.verify_chain()
+
+
+def test_audit_logger_jsonl_truncated_file_rejected(tmp_path):
+    logger = _chain_of(4)
+    path = tmp_path / "audit.jsonl"
+    logger.save_jsonl(path)
+    head = logger.head()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    path.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+    AuditLogger.load_jsonl("truncation-test-key", path)          # links still verify
+    with pytest.raises(ValueError, match="failed verification"):
+        AuditLogger.load_jsonl("truncation-test-key", path, head=head)
+
+
+def test_audit_logger_jsonl_edited_file_rejected(tmp_path):
+    logger = _chain_of(3)
+    path = tmp_path / "audit.jsonl"
+    logger.save_jsonl(path)
+    text = path.read_text(encoding="utf-8").replace('"step":1', '"step":99')
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(ValueError, match="failed verification"):
+        AuditLogger.load_jsonl("truncation-test-key", path)
+
+
+def test_audit_logger_jsonl_malformed_line_rejected(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    path.write_text('{"not": "an entry"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="malformed entry on line 1"):
+        AuditLogger.load_jsonl("truncation-test-key", path)
+
+
+def test_audit_logger_append_jsonl_matches_save(tmp_path):
+    logger = AuditLogger("truncation-test-key")
+    path = tmp_path / "audit.jsonl"
+    for i in range(3):
+        logger.record_handshake("a", "b", {"i": i})
+        logger.append_jsonl(path, logger.chain[-1])
+    loaded = AuditLogger.load_jsonl("truncation-test-key", path, head=logger.head())
+    assert len(loaded.chain) == 3

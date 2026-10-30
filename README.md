@@ -42,11 +42,38 @@ comparison uses `hmac.compare_digest` to avoid timing leaks. Metadata that is
 not a dict, not JSON-serializable, or contains `NaN`/`Infinity` is rejected at
 record time rather than silently signed.
 
-**Scope and limits.** The chain is tamper-*evident*, not tamper-*proof*. It
-lives in memory, anyone holding the secret key can re-sign a forged chain, and
-nothing records the expected chain length, so truncating the tail is not
-detected. Treat it as an integrity check against accidental or downstream
-corruption, not as a security boundary.
+**Sealed head and persistence.** `verify_chain()` alone cannot detect a chain
+that has been cut short, because a truncated chain is still internally
+consistent. `head()` returns a signed commitment to the chain's length and last
+signature; store it somewhere the chain cannot be edited from, and pass it back
+as `verify_chain(head=...)` to catch truncation or extension. `save_jsonl`,
+`append_jsonl` and `load_jsonl` persist the chain one entry per line;
+`load_jsonl` raises rather than resuming a chain that fails verification.
+
+```python
+import tempfile
+from emanon_orchestration_core import AuditLogger
+
+log = AuditLogger(secret_key="your-secret-key")
+for step in range(3):
+    log.record_handshake("planner", "executor", {"step": step})
+
+path = tempfile.mktemp(suffix=".jsonl")
+log.save_jsonl(path)
+head = log.head()                      # keep this apart from the file
+
+log.chain.pop()                        # someone trims the tail
+log.last_signature = log.chain[-1].signature
+log.verify_chain()                     # True  (links are intact)
+log.verify_chain(head=head)            # False (length no longer matches the seal)
+
+restored = AuditLogger.load_jsonl("your-secret-key", path, head=head)  # the file is still complete
+```
+
+**Scope and limits.** The chain is tamper-*evident*, not tamper-*proof*. Anyone
+holding the secret key can re-sign a forged chain and a matching head, so the
+guarantee is only as strong as key custody. Treat it as an integrity check
+against accidental or downstream corruption, not as a security boundary.
 
 ### `ThresholdOptimizer` — value-vs-compute reward
 
@@ -83,7 +110,7 @@ and should explore or be reset (`LEVY_FLIGHT`).
 from emanon_orchestration_core import EmanonMetaController
 
 c = EmanonMetaController(root_vector=[1.0, 0.0], drift_threshold=0.75)
-c.evaluate_trajectory([0.9, 0.1])   # ('PATH_INTEGRATION', 0.993)
+c.evaluate_trajectory([0.9, 0.1])   # ('PATH_INTEGRATION', 0.994)
 c.evaluate_trajectory([0.0, 1.0])   # ('LEVY_FLIGHT', 0.0)
 ```
 
@@ -146,26 +173,37 @@ pip install -r requirements.txt
 python -m pytest -v
 ```
 
-24 tests for the core, all passing, plus 13 for `ActionGate`, whose module
-needs only the standard library. Coverage is weighted toward negative cases: tampered
-metadata, forged signatures, rewritten `prev_signature`, malformed entries,
-weak secret keys, non-serializable and `NaN` metadata, non-finite reward
-inputs, zero and mismatched vectors.
+62 tests, all passing: 34 for the core, 13 for `ActionGate` (whose module needs
+only the standard library), and 15 that keep the documentation honest — every
+Python example in this README is executed, the worked example is run, and
+`INVARIANTS.md` may only cite tests that exist. Coverage is weighted toward
+negative cases: tampered metadata, forged signatures, rewritten
+`prev_signature`, truncated and edited JSONL files, tampered heads, malformed
+entries, weak secret keys, non-serializable and `NaN` metadata, non-finite
+reward inputs, zero and mismatched vectors.
+
+`INVARIANTS.md` lists the rules this library must never break and the test that
+enforces each one. `example_agent_loop.py` wires all four primitives into one
+loop with a stub agent (`python example_agent_loop.py`).
 
 ## Status and roadmap
 
 This is a prototype. It is tested and the behavior is verified, but it has no
-persistence, no published package, and no production users.
+published package and no production users.
+
+Done:
+
+- Append-only JSONL persistence with a sealed head, so truncation is detectable.
+- A worked end-to-end example (`example_agent_loop.py`) — illustrative, with a
+  stub agent, not an observed result.
 
 Next, in order:
 
 1. An experiment on real agent tasks: does disagreement at the `ActionGate`
-actually predict the actions that would have gone wrong?
-2. Append-only JSONL persistence via `pathlib`, with chain length recorded so
-   truncation is detectable.
-3. Key rotation and a documented threat model for the audit chain.
-4. A worked end-to-end example wiring the primitives into one agent loop.
-5. Packaging for PyPI.
+   actually predict the actions that would have gone wrong? This is the open
+   question the library exists to test, and nothing above answers it.
+2. Key rotation and a documented threat model for the audit chain.
+3. Packaging for PyPI.
 
 ## License
 
