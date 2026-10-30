@@ -1,9 +1,10 @@
 # Emanon Orchestration Core
 
-A small Python library for keeping multi-agent systems honest. It provides three
+A small Python library for keeping multi-agent systems honest. It provides four
 independent primitives that an orchestrator can use to record what agents did,
-decide whether the work was worth its compute, and detect when an agent has
-drifted away from its original objective.
+decide whether the work was worth its compute, detect when an agent has
+drifted away from its original objective, and hold back an irreversible action
+when the agent's own samples disagree about it.
 
 Version 0.1.0 — working prototype, fully tested, not yet production-hardened.
 Built by Helixis AI Systems Inc. (Toronto, Ontario).
@@ -91,16 +92,62 @@ c.evaluate_trajectory([0.0, 1.0])   # ('LEVY_FLIGHT', 0.0)
 Maps relation types to scalar weights for graph-based scoring: *Causally
 Drives* 3.0, *Resolves* 2.5, *Enhances* 1.5, *Mentions* 0.5, *Conflicts* −1.0.
 
+### `ActionGate` — commit only when the agent agrees with itself
+
+Before an agent does something irreversible (a refund, a database write, a
+message to a customer), sample it several times for the action it wants to
+take. `ActionGate` groups identical proposals and commits only if one action
+wins a large enough share. Otherwise it escalates, with every candidate, to a
+human.
+
+```python
+from action_gate import ActionGate
+from emanon_orchestration_core import AuditLogger
+
+log = AuditLogger(secret_key="your-secret-key")
+gate = ActionGate(threshold=0.8, logger=log)
+
+proposals = [
+    {"tool": "refund", "args": {"order": 42, "amount": 10}},
+    {"tool": "refund", "args": {"amount": 10, "order": 42}},  # same action, reordered
+    {"tool": "refund", "args": {"order": 42, "amount": 10}},
+    {"tool": "refund", "args": {"order": 42, "amount": 10}},
+    {"tool": "refund", "args": {"order": 42, "amount": 100}},
+]
+decision = gate.evaluate(proposals, agent="support_agent")
+decision.outcome    # "COMMIT" (4 of 5 agree = 0.8)
+decision.action     # {"args": {"amount": 10, "order": 42}, "tool": "refund"}
+log.verify_chain()  # True: the decision is in the tamper-evident log
+```
+
+Proposals must be structured tool calls, `{"tool": str, "args": dict}`, so two
+proposals are "the same" by exact match after parameter order is normalized.
+No embedding model or extra LLM call is involved. Malformed proposals, too few
+samples, or a bad threshold raise an error rather than being guessed at. The
+threshold must be above 0.5, so a tie can never commit. If the logger fails,
+the gate raises instead of returning a decision, so there is no unlogged
+commit. Standard library only.
+
+**Scope and limits.** Agreement is not correctness. An agent that is
+consistently wrong produces unanimous samples and passes this gate:
+`ActionGate` catches an agent that is unsure, not one that is wrong. It also
+assumes the samples are independent; if they share a context that steers them
+the same way, agreement overstates confidence. Exact matching treats `10` and
+`10.0`, or `"Apple"` and `"AAPL"`, as different actions, which errs toward
+escalating. Whether disagreement actually predicts errors on real agent tasks
+is the open question this gate exists to test.
+
 ## Install and test
 
 Requires Python 3.9+ and `numpy`.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -v test_emanon_core.py
+python -m pytest -v
 ```
 
-24 tests, all passing. Coverage is weighted toward negative cases: tampered
+24 tests for the core, all passing, plus 13 for `ActionGate`, whose module
+needs only the standard library. Coverage is weighted toward negative cases: tampered
 metadata, forged signatures, rewritten `prev_signature`, malformed entries,
 weak secret keys, non-serializable and `NaN` metadata, non-finite reward
 inputs, zero and mismatched vectors.
@@ -112,11 +159,13 @@ persistence, no published package, and no production users.
 
 Next, in order:
 
-1. Append-only JSONL persistence via `pathlib`, with chain length recorded so
+1. An experiment on real agent tasks: does disagreement at the `ActionGate`
+actually predict the actions that would have gone wrong?
+2. Append-only JSONL persistence via `pathlib`, with chain length recorded so
    truncation is detectable.
-2. Key rotation and a documented threat model for the audit chain.
-3. A worked end-to-end example wiring all three primitives into one agent loop.
-4. Packaging for PyPI.
+3. Key rotation and a documented threat model for the audit chain.
+4. A worked end-to-end example wiring the primitives into one agent loop.
+5. Packaging for PyPI.
 
 ## License
 
