@@ -236,7 +236,10 @@ Next, in order:
 
 1. An experiment on real agent tasks: does disagreement at the `ActionGate`
    actually predict the actions that would have gone wrong? This is the open
-   question the library exists to test, and nothing above answers it.
+   question the library exists to test, and nothing above answers it. The
+   harness to run it is in [`experiments/bfcl/`](experiments/bfcl/README.md),
+   with public ground truth and a free dry-run mode; it has not yet been run
+   against a real model, so the question is still open.
 2. Key rotation and a documented threat model for the audit chain.
 3. Packaging for PyPI.
 
