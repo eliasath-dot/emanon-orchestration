@@ -137,6 +137,37 @@ the same way, agreement overstates confidence. Exact matching treats `10` and
 escalating. Whether disagreement actually predicts errors on real agent tasks
 is the open question this gate exists to test.
 
+**Narrowing the gap: checks and risk tiers.** Two optional layers catch some
+confidently-wrong actions without another model call. `checks` are
+deterministic functions run on the winning action before it can commit; each
+returns `None` to pass or a reason string to block. `threshold_for` is a risk
+policy that sets the agreement required per action, or returns `None` to send
+it to a human regardless. Both fail closed: a check or policy that raises, or
+returns something invalid, escalates. Every escalation carries `reasons`, which
+are also written to the log.
+
+```python
+ORDERS = {42: 10}  # your source of truth, e.g. a database lookup
+
+def refund_matches_order(action):
+    a = action["args"]
+    if action["tool"] == "refund" and a["amount"] > ORDERS.get(a["order"], 0):
+        return f"refund {a['amount']} exceeds order total"
+    return None
+
+def by_amount(action):
+    amount = action["args"].get("amount", 0)
+    return None if amount >= 1000 else 1.0 if amount >= 100 else 0.8
+
+gate = ActionGate(checks=[refund_matches_order], threshold_for=by_amount)
+d = gate.evaluate([{"tool": "refund", "args": {"order": 42, "amount": 100}}] * 5)
+d.outcome   # "ESCALATE": 5 of 5 agree, but the check catches the wrong amount
+d.reasons   # ('check refund_matches_order blocked: refund 100 exceeds order total',)
+```
+
+Checks only catch errors you can write a rule for. They narrow the gap; they
+don't close it.
+
 ## Install and test
 
 Requires Python 3.9+ and `numpy`.
@@ -146,7 +177,8 @@ pip install -r requirements.txt
 python -m pytest -v
 ```
 
-24 tests for the core, all passing, plus 13 for `ActionGate`, whose module
+24 tests for the core, all passing, plus 28 for `ActionGate` (13 for the
+agreement gate, 15 for checks and risk tiers), whose module
 needs only the standard library. Coverage is weighted toward negative cases: tampered
 metadata, forged signatures, rewritten `prev_signature`, malformed entries,
 weak secret keys, non-serializable and `NaN` metadata, non-finite reward
