@@ -8,14 +8,14 @@ Committed to `main` so the timestamp is independent of the result.
 | item | value | why |
 |---|---|---|
 | dataset | BFCL v4 `simple_python`, all 400 prompts | the full split; no subset selection after the fact |
-| model | `gpt-4o-mini` via OpenAI | cheap, widely available, and weak enough to make mistakes; a model that is never wrong cannot test the hypothesis |
+| model | `gemini-3.5-flash-lite` via the Gemini API's OpenAI-compatible endpoint (`https://generativelanguage.googleapis.com/v1beta/openai/`), free tier | small and cheap, so weak enough to make mistakes; a model that is never wrong cannot test the hypothesis. Chosen after the OpenAI account was unavailable; changed before any sample was taken |
 | temperature | 0.7 | enough variation for samples to disagree; the stock default for sampling |
 | samples per prompt (N) | 5 | the library's documented example; 4-of-5 is the 0.8 threshold |
-| system prompt | `SYSTEM_PROMPT` in `harness.py` at commit `087285a` | unchanged after this freeze |
-| conditions | the six in `DEFAULT_CONDITIONS` at that commit | fixed; no new thresholds added after seeing results |
-| scorer | `is_correct` at that commit | fixed |
+| system prompt | `SYSTEM_PROMPT` in `harness.py` as merged with this file | unchanged after this freeze |
+| conditions | the six in `DEFAULT_CONDITIONS` as merged with this file | fixed; no new thresholds added after seeing results |
+| scorer | `is_correct` as merged with this file | fixed |
 | seed | 0 | only affects stub runs and `--limit` subsetting; irrelevant to the full run |
-| command | `python experiments/bfcl/harness.py --sampler openai --model gpt-4o-mini --temperature 0.7 --n 5 --out run1_gpt4omini_n5` | exactly this |
+| command | `python experiments/bfcl/harness.py --sampler openai --base-url https://generativelanguage.googleapis.com/v1beta/openai/ --api-key-env GEMINI_API_KEY --model gemini-3.5-flash-lite --temperature 0.7 --n 5 --sleep 6 --out run1_gemini35flashlite_n5` | exactly this. The free tier's daily cap means the 2,000 calls span about two days; the same command is re-run and resumes from the cache. `--sleep` only paces requests and does not affect the samples |
 
 ## The question and what counts as an answer
 
@@ -57,7 +57,7 @@ at agreement ≤ 0.6 (closest to a split).
 
 ## Reporting
 
-The full console output and `results/run1_gpt4omini_n5.summary.json` are
+The full console output and `results/run1_gemini35flashlite_n5.summary.json` are
 pasted into the results section below, verbatim, whichever way they come out.
 The library README is then updated to state the outcome in one sentence.
 
