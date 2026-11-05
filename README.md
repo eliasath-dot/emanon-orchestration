@@ -174,6 +174,8 @@ returns something invalid, escalates. Every escalation carries `reasons`, which
 are also written to the log.
 
 ```python
+from action_gate import ActionGate
+
 ORDERS = {42: 10}  # your source of truth, e.g. a database lookup
 
 def refund_matches_order(action):
@@ -204,9 +206,9 @@ pip install -r requirements.txt
 python -m pytest -v
 ```
 
-77 tests, all passing: 34 for the core, 28 for `ActionGate` (13 for the
+78 tests, all passing: 34 for the core, 28 for `ActionGate` (13 for the
 agreement gate, 15 for checks and risk tiers; the module needs only the
-standard library), and 15 that keep the documentation honest — every Python
+standard library), and 16 that keep the documentation honest — every Python
 example in this README is executed, the worked example is run, and
 `INVARIANTS.md` may only cite tests that exist. Coverage is weighted toward
 negative cases: tampered metadata, forged signatures, rewritten
