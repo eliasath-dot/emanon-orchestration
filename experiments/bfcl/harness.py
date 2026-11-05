@@ -238,11 +238,24 @@ class OpenAISampler:
         if p.exists():
             return json.loads(p.read_text())["content"]
         user = f"Function schema:\n{json.dumps(case.function, indent=1)}\n\nRequest: {case.prompt}"
-        resp = self.client.chat.completions.create(
-            model=self.model, temperature=self.temperature,
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}],
-        )
-        content = resp.choices[0].message.content or ""
+        content = None
+        for attempt in range(8):  # free tiers rate-limit; back off rather than fail the run
+            try:
+                resp = self.client.chat.completions.create(
+                    model=self.model, temperature=self.temperature,
+                    messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}],
+                )
+                content = resp.choices[0].message.content or ""
+                break
+            except Exception as exc:  # noqa: BLE001
+                msg = str(exc).lower()
+                transient = any(s in msg for s in ("429", "rate", "quota", "overloaded", "503", "502", "timeout", "resource_exhausted"))
+                if not transient or attempt == 7:
+                    raise
+                wait = min(60, 2 ** attempt)
+                print(f"  rate-limited on {case.id}#{i}; waiting {wait}s", file=sys.stderr)
+                time.sleep(wait)
+        assert content is not None
         p.write_text(json.dumps({"case": case.id, "i": i, "model": self.model,
                                  "temperature": self.temperature, "content": content}))
         if self.sleep:
@@ -470,6 +483,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--base-url", default=None, help="OpenAI-compatible endpoint (optional)")
     ap.add_argument("--n", type=int, default=5, help="samples per prompt")
     ap.add_argument("--temperature", type=float, default=0.7)
+    ap.add_argument("--sleep", type=float, default=0.0, help="seconds to pause after each uncached model call (for free-tier rate limits)")
+    ap.add_argument("--api-key-env", default="OPENAI_API_KEY", help="environment variable holding the API key")
     ap.add_argument("--limit", type=int, default=None, help="use a random subset of this many prompts")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--stub-p-wrong", type=float, default=0.3)
@@ -483,7 +498,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         sampler: Sampler = StubSampler(args.stub_p_wrong, args.stub_p_correlated, args.stub_p_noise, args.seed)
         label = f"stub(p_wrong={args.stub_p_wrong}, p_corr={args.stub_p_correlated}, p_noise={args.stub_p_noise})"
     else:
-        sampler = OpenAISampler(args.model, args.temperature, args.base_url)
+        sampler = OpenAISampler(args.model, args.temperature, args.base_url, args.api_key_env, args.sleep)
         label = f"{args.model} @ T={args.temperature}"
 
     results: List[CaseResult] = []
