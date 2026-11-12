@@ -239,7 +239,13 @@ class OpenAISampler:
             return json.loads(p.read_text())["content"]
         user = f"Function schema:\n{json.dumps(case.function, indent=1)}\n\nRequest: {case.prompt}"
         content = None
-        for attempt in range(8):  # free tiers rate-limit; back off rather than fail the run
+        # Free tiers have per-minute AND per-day caps. A per-minute cap clears in
+        # seconds; a per-day cap clears at the provider's daily reset, hours away.
+        # So: back off exponentially to 15 minutes and keep waiting for up to a
+        # day rather than crash. Waiting changes nothing about the samples.
+        waited = 0.0
+        attempt = 0
+        while True:
             try:
                 resp = self.client.chat.completions.create(
                     model=self.model, temperature=self.temperature,
@@ -250,10 +256,13 @@ class OpenAISampler:
             except Exception as exc:  # noqa: BLE001
                 msg = str(exc).lower()
                 transient = any(s in msg for s in ("429", "rate", "quota", "overloaded", "503", "502", "timeout", "resource_exhausted"))
-                if not transient or attempt == 7:
+                if not transient or waited > 24 * 3600:
                     raise
-                wait = min(60, 2 ** attempt)
-                print(f"  rate-limited on {case.id}#{i}; waiting {wait}s", file=sys.stderr)
+                wait = min(900, 2 ** attempt)
+                attempt += 1
+                waited += wait
+                print(f"  rate-limited on {case.id}#{i}; waiting {wait}s (total {waited / 60:.0f} min; Ctrl+C to stop, re-run to resume)",
+                      file=sys.stderr)
                 time.sleep(wait)
         assert content is not None
         p.write_text(json.dumps({"case": case.id, "i": i, "model": self.model,
