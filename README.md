@@ -238,8 +238,12 @@ Next, in order:
    actually predict the actions that would have gone wrong? This is the open
    question the library exists to test, and nothing above answers it. The
    harness to run it is in [`experiments/bfcl/`](experiments/bfcl/README.md),
-   with public ground truth and a free dry-run mode; it has not yet been run
-   against a real model, so the question is still open.
+   with public ground truth and a free dry-run mode. The first pre-registered
+   run (400 BFCL prompts, `gemini-3.5-flash-lite`, 5 samples each) came out
+   **inconclusive**: unanimous actions were wrong 4.0% of the time against
+   25.0% at the lowest agreement level, but that level had only 8 cases, below
+   the 20 the [pre-registration](experiments/bfcl/PREREGISTRATION.md) required,
+   so the question is still open.
 2. Key rotation and a documented threat model for the audit chain.
 3. Packaging for PyPI.
 

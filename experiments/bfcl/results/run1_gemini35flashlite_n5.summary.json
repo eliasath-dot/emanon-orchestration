@@ -1,0 +1,106 @@
+{
+ "sampler": "gemini-3.5-flash-lite @ T=0.7",
+ "n_samples": 5,
+ "prompts": 400,
+ "seed": 0,
+ "summaries": [
+  {
+   "condition": "no_gate",
+   "n_cases": 400,
+   "commits": 400,
+   "wrong_commits": 21,
+   "coverage": 1.0,
+   "selective_risk": 0.0525,
+   "risk_upper_95": 0.07472379735376607,
+   "wrong_per_case": 0.0525,
+   "escalations": 0,
+   "wrong_rate_unanimous": 0.03968253968253968,
+   "wrong_rate_non_unanimous": 0.2727272727272727
+  },
+  {
+   "condition": "gate_0.6",
+   "n_cases": 400,
+   "commits": 400,
+   "wrong_commits": 21,
+   "coverage": 1.0,
+   "selective_risk": 0.0525,
+   "risk_upper_95": 0.07472379735376607,
+   "wrong_per_case": 0.0525,
+   "escalations": 0,
+   "wrong_rate_unanimous": 0.03968253968253968,
+   "wrong_rate_non_unanimous": 0.2727272727272727
+  },
+  {
+   "condition": "gate_0.8",
+   "n_cases": 400,
+   "commits": 392,
+   "wrong_commits": 19,
+   "coverage": 0.98,
+   "selective_risk": 0.04846938775510204,
+   "risk_upper_95": 0.07031195756234404,
+   "wrong_per_case": 0.0475,
+   "escalations": 8,
+   "wrong_rate_unanimous": 0.03968253968253968,
+   "wrong_rate_non_unanimous": 0.2857142857142857
+  },
+  {
+   "condition": "gate_1.0",
+   "n_cases": 400,
+   "commits": 378,
+   "wrong_commits": 15,
+   "coverage": 0.945,
+   "selective_risk": 0.03968253968253968,
+   "risk_upper_95": 0.06044772077754052,
+   "wrong_per_case": 0.0375,
+   "escalations": 22,
+   "wrong_rate_unanimous": 0.03968253968253968,
+   "wrong_rate_non_unanimous": null
+  },
+  {
+   "condition": "gate_0.8+checks",
+   "n_cases": 400,
+   "commits": 392,
+   "wrong_commits": 19,
+   "coverage": 0.98,
+   "selective_risk": 0.04846938775510204,
+   "risk_upper_95": 0.07031195756234404,
+   "wrong_per_case": 0.0475,
+   "escalations": 8,
+   "wrong_rate_unanimous": 0.03968253968253968,
+   "wrong_rate_non_unanimous": 0.2857142857142857
+  },
+  {
+   "condition": "checks_only",
+   "n_cases": 400,
+   "commits": 400,
+   "wrong_commits": 21,
+   "coverage": 1.0,
+   "selective_risk": 0.0525,
+   "risk_upper_95": 0.07472379735376607,
+   "wrong_per_case": 0.0525,
+   "escalations": 0,
+   "wrong_rate_unanimous": 0.03968253968253968,
+   "wrong_rate_non_unanimous": 0.2727272727272727
+  }
+ ],
+ "agreement_vs_error": [
+  {
+   "agreement": 0.6,
+   "n": 8,
+   "wrong": 2,
+   "wrong_rate": 0.25
+  },
+  {
+   "agreement": 0.8,
+   "n": 14,
+   "wrong": 4,
+   "wrong_rate": 0.2857142857142857
+  },
+  {
+   "agreement": 1.0,
+   "n": 378,
+   "wrong": 15,
+   "wrong_rate": 0.03968253968253968
+  }
+ ]
+}
